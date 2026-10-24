@@ -4,6 +4,8 @@
 
 This repository is intentionally a **single-file static app** (`index.html`) with **no build system**, **no test runner**, and **no linter configuration**.
 
+The `.github/workflows/pages.yml` workflow runs an inline JavaScript syntax check on PRs and publishes only `index.html` to GitHub Pages on `main`. This check does not replace browser smoke testing. There is no compilation or dependency installation step.
+
 - **Run locally:** open `index.html` directly in a browser (`file://.../index.html`)
 - **Smoke test (manual):** verify quiz flow end-to-end in browser
   - Answer flow: choice selection, correct/incorrect feedback, score updates
