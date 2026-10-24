@@ -143,7 +143,9 @@
     .lang-btn:focus-visible,
     .choice-btn:focus-visible,
     .next-btn:focus-visible,
-    .restart-btn:focus-visible {
+    .restart-btn:focus-visible,
+    .copy-btn:focus-visible,
+    .copy-text:focus-visible {
       outline: 3px solid var(--accent);
       outline-offset: 2px;
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--surface) 72%, transparent);
@@ -269,6 +271,30 @@
       opacity: 0;
       transform: translateY(2px);
       transition: opacity 220ms ease, transform 220ms ease;
+      color: var(--text);
+      font-weight: 400;
+      overflow-wrap: anywhere;
+    }
+
+    .feedback p {
+      margin: 6px 0 0;
+    }
+
+    .feedback strong {
+      display: block;
+    }
+
+    .feedback.correct strong {
+      color: #15803d;
+    }
+
+    .feedback.wrong strong {
+      color: #b91c1c;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .feedback.correct strong { color: #86efac; }
+      .feedback.wrong strong { color: #fca5a5; }
     }
 
     .feedback.show {
@@ -277,12 +303,10 @@
     }
 
     .feedback.correct {
-      color: var(--correct);
       animation: pop 260ms ease;
     }
 
     .feedback.wrong {
-      color: var(--wrong);
       animation: shake 360ms ease;
     }
 
@@ -292,7 +316,8 @@
     }
 
     .next-btn,
-    .restart-btn {
+    .restart-btn,
+    .copy-btn {
       border: none;
       border-radius: 12px;
       padding: 10px 14px;
@@ -305,12 +330,20 @@
     }
 
     .next-btn:hover,
-    .restart-btn:hover {
+    .restart-btn:hover,
+    .copy-btn:hover {
       transform: translateY(-1px);
       filter: brightness(1.05);
     }
 
-    .next-btn:disabled {
+    .copy-btn {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--accent);
+    }
+
+    .next-btn:disabled,
+    .copy-btn:disabled {
       opacity: 0.55;
       cursor: default;
       transform: none;
@@ -336,6 +369,25 @@
     .result p {
       margin: 0;
       color: var(--muted);
+    }
+
+    .copy-fallback {
+      display: grid;
+      gap: 6px;
+      text-align: left;
+    }
+
+    .copy-text {
+      width: 100%;
+      min-height: 7em;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      resize: vertical;
+      user-select: text;
     }
 
     .result-extra {
@@ -443,6 +495,7 @@
       .choice-btn,
       .next-btn,
       .restart-btn,
+      .copy-btn,
       .progress-bar,
       .feedback {
         transition: none !important;
@@ -451,7 +504,7 @@
   </style>
 </head>
 <body>
-  <main class="quiz-card" aria-live="polite">
+  <main class="quiz-card">
     <div id="quiz-screen">
       <div class="lang-row">
         <div class="lang-switch" role="group" aria-label="Language">
@@ -461,16 +514,16 @@
       </div>
       <div class="header-row">
         <span id="progress-text">Question 1 / 10</span>
-        <span id="score-text">Score: 0</span>
+        <span id="score-text" aria-live="polite" aria-atomic="true">Score: 0</span>
       </div>
       <div class="progress-wrap" aria-hidden="true">
         <div id="progress-bar" class="progress-bar"></div>
       </div>
       <h1 id="quiz-title">🚀 Space Exploration Quiz</h1>
       <p id="quiz-subtitle" class="subtitle">Test your cosmic knowledge across missions, planets, and spacecraft.</p>
-      <p id="question" class="question"></p>
+      <p id="question" class="question" tabindex="-1"></p>
       <div id="choices" class="choices"></div>
-      <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+      <div id="feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="footer-row">
         <button id="next-btn" class="next-btn" type="button" disabled>Next</button>
       </div>
@@ -478,10 +531,16 @@
 
     <section id="result-screen" class="result hidden">
       <div id="result-emoji" class="emoji" aria-hidden="true">🌌</div>
-      <h2 id="result-title">Mission complete!</h2>
+      <h2 id="result-title" tabindex="-1" aria-describedby="result-score result-message result-extra">Mission complete!</h2>
       <p id="result-score"></p>
       <p id="result-message"></p>
       <p id="result-extra" class="result-extra" aria-live="polite"></p>
+      <button id="copy-btn" class="copy-btn" type="button">Copy result</button>
+      <p id="copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <div id="copy-fallback" class="copy-fallback hidden">
+        <label id="copy-label" for="copy-text">Result summary</label>
+        <textarea id="copy-text" class="copy-text" readonly aria-describedby="copy-status"></textarea>
+      </div>
       <button id="restart-btn" class="restart-btn" type="button">Play again</button>
     </section>
   </main>
@@ -497,9 +556,15 @@
         next: "Next",
         finish: "Finish",
         restart: "Play again",
+        copy: "Copy result",
+        copying: "Copying…",
+        copied: "Result copied!",
+        copyFailed: "Clipboard access is unavailable or was denied. Copy the selected text manually (Ctrl+C or Command+C).",
+        copyLabel: "Result summary",
         resultTitle: "Mission complete!",
         correct: "✅ Correct!",
         wrong: "❌ Not quite!",
+        correctAnswer: (answer) => `Correct answer: ${answer}.`,
         resultScore: (score, total, pct) => `You scored ${score} out of ${total} (${pct}%).`,
         resultMessages: {
           top: "Stellar! You're a true space expert.",
@@ -510,54 +575,64 @@
         celebratoryLine: "🛰️ Mission control salutes you. Outstanding flight!",
         questions: [
           {
-            question: "Which was the first human-made object to reach outer space?",
+            question: "Which was the first artificial satellite to orbit Earth?",
             choices: ["Sputnik 1", "Explorer 1", "Vostok 1", "Apollo 11"],
-            answer: 0
+            answer: 0,
+            explanation: "The Soviet Union launched Sputnik 1 on October 4, 1957, making it the first artificial satellite to orbit Earth."
           },
           {
             question: "Who was the first human to walk on the Moon?",
             choices: ["Buzz Aldrin", "Yuri Gagarin", "Neil Armstrong", "Michael Collins"],
-            answer: 2
+            answer: 2,
+            explanation: "Neil Armstrong took the first human steps on the Moon during Apollo 11 in July 1969, followed by Buzz Aldrin."
           },
           {
             question: "What is the name of NASA's most powerful rocket to date?",
             choices: ["Saturn IB", "Space Launch System (SLS)", "Falcon Heavy", "Delta IV Heavy"],
-            answer: 1
+            answer: 1,
+            explanation: "NASA's Space Launch System launched Artemis I in November 2022, sending an uncrewed Orion spacecraft on a mission around the Moon."
           },
           {
             question: "Which rover successfully landed on Mars in 2021?",
             choices: ["Curiosity", "Spirit", "Perseverance", "Opportunity"],
-            answer: 2
+            answer: 2,
+            explanation: "Perseverance landed in Jezero Crater on February 18, 2021, to study Mars and collect samples."
           },
           {
             question: "What protects Earth from most harmful solar radiation?",
             choices: ["The asteroid belt", "The ionosphere", "Earth's magnetic field", "The stratosphere"],
-            answer: 2
+            answer: 2,
+            explanation: "Earth's magnetic field deflects many charged particles from the Sun. The atmosphere also protects us; the magnetic field does not block all forms of solar radiation."
           },
           {
             question: "Which mission launched the James Webb Space Telescope?",
             choices: ["Artemis I", "Ariane 5 VA256", "Soyuz MS-19", "Falcon 9 CRS-24"],
-            answer: 1
+            answer: 1,
+            explanation: "An Ariane 5 rocket launched Webb from Europe's spaceport in French Guiana on December 25, 2021."
           },
           {
             question: "The International Space Station primarily orbits in which region?",
             choices: ["Geostationary orbit", "Low Earth orbit", "Lunar orbit", "Sun-synchronous orbit"],
-            answer: 1
+            answer: 1,
+            explanation: "The ISS travels in low Earth orbit, roughly 400 kilometers above Earth, completing an orbit about every 90 minutes."
           },
           {
             question: "Which planet has the largest volcano in the solar system?",
             choices: ["Venus", "Jupiter", "Mars", "Mercury"],
-            answer: 2
+            answer: 2,
+            explanation: "Mars is home to Olympus Mons, the largest volcano in the solar system."
           },
           {
             question: "What is the name of the first reusable U.S. spacecraft program?",
             choices: ["Gemini", "Mercury", "Space Shuttle", "Skylab"],
-            answer: 2
+            answer: 2,
+            explanation: "The Space Shuttle's orbiter could return to Earth and fly again. Columbia made the program's first orbital flight in April 1981."
           },
           {
             question: "Which moon is considered one of the best candidates for extraterrestrial life due to a subsurface ocean?",
             choices: ["Europa", "Phobos", "Titania", "Io"],
-            answer: 0
+            answer: 0,
+            explanation: "Evidence suggests a salty ocean beneath Europa's icy crust. Scientists are studying whether it could support life; life there has not been discovered."
           }
         ]
       },
@@ -570,9 +645,15 @@
         next: "다음",
         finish: "결과 보기",
         restart: "다시 하기",
+        copy: "결과 복사",
+        copying: "복사 중…",
+        copied: "결과를 복사했어요!",
+        copyFailed: "클립보드를 사용할 수 없거나 접근이 거부되었어요. 선택된 텍스트를 직접 복사하세요 (Ctrl+C 또는 Command+C).",
+        copyLabel: "결과 요약",
         resultTitle: "미션 완료!",
         correct: "✅ 정답입니다!",
         wrong: "❌ 아쉬워요!",
+        correctAnswer: (answer) => `정답: ${answer}.`,
         resultScore: (score, total, pct) => `${total}문제 중 ${score}개 정답 (${pct}%).`,
         resultMessages: {
           top: "대단해요! 진짜 우주 전문가네요.",
@@ -583,54 +664,64 @@
         celebratoryLine: "🛰️ 미션 컨트롤이 경례합니다. 훌륭한 비행이었어요!",
         questions: [
           {
-            question: "인류가 만든 물체 중 가장 먼저 우주 공간에 도달한 것은 무엇일까요?",
+            question: "지구 궤도를 돈 최초의 인공위성은 무엇일까요?",
             choices: ["스푸트니크 1호", "익스플로러 1호", "보스토크 1호", "아폴로 11호"],
-            answer: 0
+            answer: 0,
+            explanation: "소련이 1957년 10월 4일 발사한 스푸트니크 1호는 지구 궤도를 돈 최초의 인공위성이에요."
           },
           {
             question: "달 표면을 처음으로 걸은 사람은 누구일까요?",
             choices: ["버즈 올드린", "유리 가가린", "닐 암스트롱", "마이클 콜린스"],
-            answer: 2
+            answer: 2,
+            explanation: "닐 암스트롱은 1969년 7월 아폴로 11호 임무에서 인류 최초로 달에 발을 디뎠고, 버즈 올드린이 뒤를 이었어요."
           },
           {
             question: "현재 기준 NASA의 가장 강력한 로켓 이름은 무엇일까요?",
             choices: ["새턴 IB", "SLS(우주발사시스템)", "팰컨 헤비", "델타 IV 헤비"],
-            answer: 1
+            answer: 1,
+            explanation: "NASA의 SLS는 2022년 11월 아르테미스 I을 발사해 무인 오리온 우주선을 달 주변으로 보냈어요."
           },
           {
             question: "2021년에 화성에 성공적으로 착륙한 로버는 무엇일까요?",
             choices: ["큐리오시티", "스피릿", "퍼서비어런스", "오퍼튜니티"],
-            answer: 2
+            answer: 2,
+            explanation: "퍼서비어런스는 화성을 연구하고 시료를 수집하기 위해 2021년 2월 18일 예제로 충돌구에 착륙했어요."
           },
           {
             question: "지구를 유해한 태양 복사선으로부터 주로 보호하는 것은 무엇일까요?",
             choices: ["소행성대", "전리층", "지구 자기장", "성층권"],
-            answer: 2
+            answer: 2,
+            explanation: "지구 자기장은 태양에서 오는 많은 하전 입자를 빗나가게 해요. 대기도 우리를 보호하며, 자기장이 모든 종류의 태양 복사선을 차단하는 것은 아니에요."
           },
           {
             question: "제임스 웹 우주망원경을 발사한 임무는 무엇일까요?",
             choices: ["아르테미스 I", "아리안 5 VA256", "소유즈 MS-19", "팰컨 9 CRS-24"],
-            answer: 1
+            answer: 1,
+            explanation: "아리안 5 로켓은 2021년 12월 25일 프랑스령 기아나의 유럽 우주기지에서 웹 망원경을 발사했어요."
           },
           {
             question: "국제우주정거장(ISS)은 주로 어떤 궤도를 돌고 있을까요?",
             choices: ["정지궤도", "저궤도(LEO)", "달 궤도", "태양동기궤도"],
-            answer: 1
+            answer: 1,
+            explanation: "ISS는 지구 상공 약 400km의 저궤도를 돌며, 약 90분마다 지구를 한 바퀴 돌아요."
           },
           {
             question: "태양계에서 가장 큰 화산이 있는 행성은 어디일까요?",
             choices: ["금성", "목성", "화성", "수성"],
-            answer: 2
+            answer: 2,
+            explanation: "화성에는 태양계에서 가장 큰 화산인 올림푸스 몬스가 있어요."
           },
           {
             question: "미국 최초의 재사용 우주선 프로그램 이름은 무엇일까요?",
             choices: ["제미니", "머큐리", "스페이스 셔틀", "스카이랩"],
-            answer: 2
+            answer: 2,
+            explanation: "스페이스 셔틀의 궤도선은 지구로 돌아와 다시 비행할 수 있었어요. 컬럼비아호가 1981년 4월 이 프로그램의 첫 궤도 비행을 했어요."
           },
           {
             question: "지하 바다가 있을 가능성 때문에 외계 생명체 탐사 후보로 자주 언급되는 위성은 무엇일까요?",
             choices: ["유로파", "포보스", "티타니아", "이오"],
-            answer: 0
+            answer: 0,
+            explanation: "유로파의 얼음 지각 아래에 소금물 바다가 있다는 증거가 있어요. 생명체가 살 수 있는지 연구 중이지만, 아직 생명체가 발견된 것은 아니에요."
           }
         ]
       }
@@ -656,11 +747,17 @@
     const resultMessage = document.getElementById("result-message");
     const resultExtra = document.getElementById("result-extra");
     const restartBtn = document.getElementById("restart-btn");
+    const copyBtn = document.getElementById("copy-btn");
+    const copyStatus = document.getElementById("copy-status");
+    const copyFallback = document.getElementById("copy-fallback");
+    const copyText = document.getElementById("copy-text");
+    const copyLabel = document.getElementById("copy-label");
 
     let currentLang = navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
     let currentIndex = 0;
     let score = 0;
     let userAnswers = [];
+    let copyRequest = 0;
 
     function getT() {
       return i18n[currentLang];
@@ -683,6 +780,7 @@
       quizSubtitle.textContent = t.subtitle;
       restartBtn.textContent = t.restart;
       resultTitle.textContent = t.resultTitle;
+      copyLabel.textContent = t.copyLabel;
       updateLanguageButtons();
     }
 
@@ -718,7 +816,8 @@
         button.type = "button";
         button.className = "choice-btn";
         button.textContent = choice;
-        button.addEventListener("click", () => handleAnswer(index, button));
+        button.addEventListener("click", () => handleAnswer(index));
+        button.setAttribute("aria-describedby", "question");
         choicesEl.appendChild(button);
       });
 
@@ -740,19 +839,25 @@
       });
 
       const isCorrect = selected === item.answer;
-      if (isCorrect) {
-        feedbackEl.textContent = t.correct;
-        feedbackEl.className = "feedback show correct";
-      } else {
+      const status = document.createElement("strong");
+      status.textContent = isCorrect ? t.correct : t.wrong;
+      const explanation = document.createElement("p");
+      explanation.textContent = item.explanation;
+      const content = [status];
+      if (!isCorrect) {
         buttons[selected].style.borderColor = "var(--wrong)";
-        feedbackEl.textContent = t.wrong;
-        feedbackEl.className = "feedback show wrong";
+        const correctAnswer = document.createElement("p");
+        correctAnswer.textContent = t.correctAnswer(item.choices[item.answer]);
+        content.push(correctAnswer);
       }
+      content.push(explanation);
+      feedbackEl.replaceChildren(...content);
+      feedbackEl.className = `feedback show ${isCorrect ? "correct" : "wrong"}`;
       updateHeaderAndProgress();
       nextBtn.disabled = false;
     }
 
-    function handleAnswer(selected, sourceButton) {
+    function handleAnswer(selected) {
       if (userAnswers[currentIndex] !== null) return;
 
       const item = getQuizData()[currentIndex];
@@ -763,10 +868,11 @@
       }
 
       applyAnsweredState(selected);
-      if (sourceButton) sourceButton.focus();
+      nextBtn.focus();
     }
 
     function showResults() {
+      resetCopyState();
       const t = getT();
       quizScreen.classList.add("hidden");
       resultScreen.classList.remove("hidden");
@@ -796,17 +902,67 @@
       resultExtra.textContent = isCelebration ? t.celebratoryLine : "";
     }
 
+    function resetCopyState() {
+      copyRequest += 1;
+      copyBtn.disabled = false;
+      copyBtn.textContent = getT().copy;
+      copyStatus.textContent = "";
+      copyFallback.classList.add("hidden");
+      copyText.value = "";
+    }
+
+    async function copyResult() {
+      if (copyBtn.disabled || resultScreen.classList.contains("hidden")) return;
+      const request = ++copyRequest;
+      const t = getT();
+      const total = getQuizData().length;
+      const pct = Math.round((score / total) * 100);
+      const summary = `${t.pageTitle}\n${resultEmoji.textContent} ${t.resultScore(score, total, pct)}`;
+      copyBtn.disabled = true;
+      copyBtn.textContent = t.copying;
+      copyStatus.textContent = "";
+      copyFallback.classList.add("hidden");
+
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+          throw new Error("Clipboard API unavailable");
+        }
+        await navigator.clipboard.writeText(summary);
+      } catch (error) {
+        if (request !== copyRequest) return;
+        copyStatus.textContent = t.copyFailed;
+        copyText.value = summary;
+        copyFallback.classList.remove("hidden");
+        copyText.focus();
+        copyText.select();
+      } finally {
+        if (request === copyRequest) {
+          copyBtn.disabled = false;
+          copyBtn.textContent = t.copy;
+        }
+      }
+
+      if (request === copyRequest && copyFallback.classList.contains("hidden")) {
+        copyStatus.textContent = t.copied;
+        copyBtn.focus();
+      }
+    }
+
     function nextStep() {
+      if (userAnswers[currentIndex] == null) return;
       currentIndex += 1;
       if (currentIndex < getQuizData().length) {
         renderQuestion();
+        choicesEl.querySelector(".choice-btn").focus();
       } else {
         progressBar.style.width = "100%";
         showResults();
+        resultTitle.focus();
       }
     }
 
     function restartQuiz() {
+      resetCopyState();
       currentIndex = 0;
       score = 0;
       userAnswers = new Array(getQuizData().length).fill(null);
@@ -829,7 +985,11 @@
     }
 
     nextBtn.addEventListener("click", nextStep);
-    restartBtn.addEventListener("click", restartQuiz);
+    restartBtn.addEventListener("click", () => {
+      restartQuiz();
+      choicesEl.querySelector(".choice-btn").focus();
+    });
+    copyBtn.addEventListener("click", copyResult);
     langEnBtn.addEventListener("click", () => switchLanguage("en"));
     langKoBtn.addEventListener("click", () => switchLanguage("ko"));
 

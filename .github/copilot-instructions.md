@@ -7,8 +7,10 @@ This repository is intentionally a **single-file static app** (`index.html`) wit
 - **Run locally:** open `index.html` directly in a browser (`file://.../index.html`)
 - **Smoke test (manual):** verify quiz flow end-to-end in browser
   - Answer flow: choice selection, correct/incorrect feedback, score updates
+  - Explanation flow: each of the 10 questions has English/Korean explanations, shown only after answering; wrong feedback names the correct choice. Switch languages after correct and incorrect answers to verify translated explanations without score/progress changes.
   - Navigation flow: Next/Finish progression through 10 questions
   - Result flow: result screen text/emoji, restart behavior
+  - Copy result flow: localized summary, announced clipboard success, selected-text fallback when clipboard access is denied/unavailable, and cleanup on restart. Exercise both English and Korean; simulated key events plus `.click()` do not verify native keyboard activation.
   - Keyboard flow: focus visibility and Enter activation for language toggle, answers, next/restart
 
 ## High-level architecture
@@ -36,6 +38,8 @@ This repository is intentionally a **single-file static app** (`index.html`) wit
 - **No external dependencies:** keep everything self-contained in `index.html` unless explicitly changing project scope.
 - **Language switching is runtime, not page reload:** use `switchLanguage()` + `updateStaticTexts()` and preserve current quiz progress/state.
 - **Question content is locale-owned:** each language bundle includes its own `questions` array; when adding/editing questions, keep `en` and `ko` structures aligned (same count/order/answer indices).
+- **Answer explanations:** each question owns an `explanation`; `applyAnsweredState()` renders it with text nodes in the atomic `#feedback` status region. Keep explanations in the theme's readable text color, rather than relying on correct/incorrect colors. Actual answer submission focuses Next; advancing focuses the new first choice, while language re-rendering must not steal focus.
 - **Theme consistency via CSS variables:** light/dark behavior is controlled through `:root` + `@media (prefers-color-scheme: dark)` tokens (`--bg`, `--surface`, `--text`, etc.).
 - **Motion/accessibility expectations are first-class:** respect `prefers-reduced-motion` rules already present and maintain visible `:focus-visible` styling for all interactive controls.
 - **Result celebration contract:** `showResults()` applies `.celebrate` only when `score >= 8`; keep this threshold behavior intact unless requirements change.
+- **Result sharing:** `copyResult()` uses the Clipboard API with a visible manual-copy fallback. `copyRequest` invalidates pending clipboard completions when results are refreshed or the quiz restarts; preserve this guard.
